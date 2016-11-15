@@ -2210,24 +2210,30 @@ function New-XtremRequest
 }
 
 ######### ETC #########
-
-Function Get-XtremErrorMsg([AllowNull()][object]$errordata){   
+function Get-XtremErrorMsg([AllowNull()][object]$errordata)
+{   
     $ed = $errordata
-    
-  try{ 
-    $ed = $_.Exception.Response.GetResponseStream()
-    $reader = New-Object System.IO.StreamReader($ed)
-    $responseBody = $reader.ReadToEnd(); 
-    $errorcontent = $responseBody | ConvertFrom-Json
-    $errormsg = $errorcontent.message
+    try
+    { 
+        $ed = $_.Exception.Response.GetResponseStream()
+        $reader = New-Object System.IO.StreamReader($ed)
+        $responseBody = $reader.ReadToEnd(); 
+        $errorcontent = $responseBody | ConvertFrom-Json
+        $errormsg = $errorcontent.message
 
-    Write-Host -ForegroundColor Red $errormsg
-    return $errorcontent
-    
+        Write-Host -ForegroundColor Red $errormsg
+        return $errorcontent
     }
-   catch{
-    Write-Host ""
-    Write-Host -ForegroundColor Red "Error: XtremIO name or IP not resolveable (). It may have been mistyped. This may also indicate that you have not properly imported the XtremIO certificate."
+   catch
+   {
+        Write-Host ""
+        Write-Host -ForegroundColor Red "Error: XtremIO name or IP not resolveable. It may have been mistyped. This may also indicate that you have not properly imported the XtremIO certificate."
+        Write-Output ("XtremName (aka XmsName): {0}. XtremClusterName (aka XtremioName): {1}" -f $global:XtremName, $global:XtremClusterName)
+        Write-Information -MessageData "testing network connection to Cluster."
+        Test-Connection -ComputerName $global:XtremName -Count 1 -TimeToLive 1 
+        # -ErrorVariable ConnectionTestIPError -ErrorAction SilentlyContinue
+        Test-Connection -ComputerName $global:XtremClusterName -Count 1 -TimeToLive 1 
+        # -ErrorVariable ConnectionTestDNSError -ErrorAction SilentlyContinue
    }
 }
 
@@ -2319,7 +2325,6 @@ function New-XtremSecureCreds([string] $path)
       New-XtremSecureCreds -path C:\temp
 
   #>
-
   $pwdpath = $path + "\xiopwd.txt"
   $unamepath = $path + "\xiouser.txt"
   $creds = Get-Credential
@@ -2485,7 +2490,3 @@ function Get-XtremHelp(){
 
 
 }
-
-
-
-
