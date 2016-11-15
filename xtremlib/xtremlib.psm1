@@ -1075,9 +1075,6 @@ Param(
 
 }
 
-
-
-
 ######### MAPPING COMMANDS #########
 
 Function Get-XtremVolumeMappings{
@@ -1152,22 +1149,22 @@ Function Get-XtremVolumeMapping{
 
   #>
 
-  [cmdletbinding()]
-Param (
-    [parameter()]
-    [string]$XmsName,
-    [parameter()]
-    [string]$XtremioName=$global:XtremClusterName,
-    [parameter()]
-    [string]$Username,
-    [parameter(Mandatory=$true,Position=0)]
-    [string]$MappingName,
-    [parameter()]
-    [string]$Password,
-    [Parameter()]
-    [string[]]$Properties
-  )
-   
+    [cmdletbinding()]
+    Param (
+        [parameter()]
+        [string]$XmsName,
+        [parameter()]
+        [string]$XtremioName=$global:XtremClusterName,
+        [parameter()]
+        [string]$Username,
+        [parameter(Mandatory=$true,Position=0)]
+        [string]$MappingName,
+        [parameter()]
+        [string]$Password,
+        [Parameter()]
+        [string[]]$Properties
+    )
+    
   $Route = '/types/lun-maps'
   $GetProperty = 'name='+$MappingName
   $ObjectSelection = 'content'
@@ -1921,243 +1918,296 @@ Param(
  
 }
 
-#Builds the REST request
-Function New-XtremRequest {
-[cmdletbinding()]
-Param(
-[Parameter(Mandatory=$true)]
-[ValidateSet('GET','PUT','POST','DELETE')]
-[String]$Method,
-[Parameter(Mandatory=$true)]
-[String]$Endpoint,
-[Parameter()]
-[String]$XmsName,
-[Parameter()]
-[String]$XtremioName,
-[Parameter()]
-[Array]$Body,
-[Parameter()]
-[String[]]$Properties = $null,
-[Parameter()]
-[String]$Username,
-[Parameter()]
-[String]$Password,
-[Parameter()]
-[String]$ObjectSelection = '',
-[Parameter()]
-[String]$GetProperty = $null
-)
+function Get-XtremEvents
+{
+    param
+    (
+        [parameter()]
+        [String] $FromDate,
+        [Parameter()]
+        [String] $ToDate,
+        [parameter()]
+        [string]$XmsName,
+        [parameter()]
+        [string]$Username,
+        [parameter()]
+        [string]$Password
+        
+    )
+    process
+    {
+        $Route = '/types/events'
+        $ObjectSelection = 'events'
+        $URI = $Route
+        
+        if($FromDate)
+        {
+            $URI+='?from-date-time='+$FromDate
+        }
+        if($ToDate)
+        {
+            if($FromDate)
+            {
+                $URI+='&to-date-time='+$ToDate
+            }
+            else
+            {
+                $URI+='?to-date-time='+$ToDate
+            }
+        }
+        New-XtremRequest -Method GET -Endpoint $Route -XmsName $XmsName -Username $Username -Password $Password -ObjectSelection $ObjectSelection -Uri $URI
+    }
+}
 
-  ##Set up variables
-  #If there is a global Username set, use the globals
+function Get-XtremAlerts
+{
+    param
+    (
+        [parameter()]
+        [String] $FromDate,
+        [Parameter()]
+        [String] $ToDate,
+        [parameter()]
+        [String] $XmsName,
+        [parameter()]
+        [String] $Username,
+        [parameter()]
+        [String] $Password
+    )
+    process
+    {
+        $Route = '/types/alerts'
+        $ObjectSelection = 'alerts'
+        $URI = $Route
 
-  if($global:XtremUsername){
-  $Username = $global:XtremUsername
-  $XmsName = $global:XtremName
-  $XtremioName = $global:XtremClusterName
-  $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($global:XtremPassword)
-  $Password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
-  }
+        $Links = New-XtremRequest -Method GET -Endpoint $Route -XmsName $XmsName -Username $Username -Password $Password -ObjectSelection $ObjectSelection -Uri $URI
+        foreach($link in $Links)
+        {
+            $AlertNumber = [regex]::Match($link.href,'(?<=alerts/)\d+$').Value
+            $URI = $Route+'/'+$AlertNumber
+            $ObjectSelection = 'content'
+            New-XtremRequest -Method GET -Endpoint $URI -XmsName $XmsName -Username $Username -Password $Password -ObjectSelection $ObjectSelection -Uri $URI
+        }
+    }
+}
 
-  #Special case...tags doesn't take cluster name and neither does performance
-  if(($Endpoint -like '*tags*' -or $Endpoint -like '*performance*') -and ($Method -eq 'GET' -or $Method -eq 'DELETE')){
-   $XtremioName = $null
-  }
+## Builds the REST request
+function New-XtremRequest 
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [ValidateSet('GET','PUT','POST','DELETE')]
+        [String]$Method,
+        [Parameter(Mandatory=$true)]
+        [String]$Endpoint,
+        [Parameter()]
+        [String]$XmsName,
+        [Parameter()]
+        [String]$XtremioName,
+        [Parameter()]
+        [Array]$Body,
+        [Parameter()]
+        [String[]]$Properties = $null,
+        [Parameter()]
+        [String]$Username,
+        [Parameter()]
+        [String]$Password,
+        [Parameter()]
+        [String]$ObjectSelection = '',
+        [Parameter()]
+        [String]$GetProperty = $null,
+        [Parameter()]
+        [String] $Uri
+    )
+    process
+    {
+        ## Set up variables
+        ## If there is a global Username set, use the globals
+        if($global:XtremUsername)
+        {
+            $Username = $global:XtremUsername
+            $XmsName = $global:XtremName
+            $XtremioName = $global:XtremClusterName
+            $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($global:XtremPassword)
+            $Password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+        }
 
-$result = try{    
-                  ##Construct Auth Header and full URI
-                  $BaseUri = "https://$XmsName/api/json/v2"
-                  $Header = Get-XtremAuthHeader -username $username -password $password
-                  
-                  $PropertyString = ''
-                  $ClusterString = '' 
+        ## Special case...tags doesn't take cluster name and neither does performance
+        if(($Endpoint -like '*tags*' -or $Endpoint -like '*performance*') -and ($Method -eq 'GET' -or $Method -eq 'DELETE'))
+        {
+            $XtremioName = $null
+        }
 
-                  
+        $result = try
+        {
+            ## Construct Auth Header and full URI
+            $BaseUri = "https://$XmsName/api/json/v2"
+            $Header = Get-XtremAuthHeader -username $username -password $password
 
-                        #If properties were specified, builds a string for querying those
-                       if($Properties){
-                        Foreach($Property in $Properties){
-                          if($Property -eq $Properties[($Properties.Length -1)]){
-                       
-                            $PropertyString += 'prop=' + $Property 
+            $PropertyString = ''
+            $ClusterString = ''
 
-                          }
-                          else{
-                           $PropertyString += 'prop='+ $Property + '&'
-                          }
-                    
-                        }
-                       }
-                       else{
-                         $PropertyString = $null
-                       }
-                      #If a cluster name was specified, builds a string for that
-                      if($XtremioName -and ($Method -eq 'GET' -or $Method -eq 'DELETE')){
-
-                       
-
-                          $ClusterString = 'cluster-name='+$XtremioName
-
-                        
-                      }
-                      else{
-
-                        $ClusterString = $null 
-                      }
-
-                  
-                  if($PropertyString){
-                    
-                    #another special case for performance calls...
-
-                    if($Endpoint -like "*performance*"){
-                      $PropertyString = $PropertyString
+            ## If properties were specified, builds a string for querying those
+            if($Properties)
+            {
+                Foreach($Property in $Properties)
+                {
+                    if($Property -eq $Properties[($Properties.Length -1)])
+                    {
+                        $PropertyString += 'prop=' + $Property 
                     }
-                    else{
-                      $PropertyString = 'full=1&'+$PropertyString
+                    else
+                    {
+                        $PropertyString += 'prop='+ $Property + '&'
                     }
 
-                  }
+                }
+            }
+            else
+            {
+                $PropertyString = $null
+            }
 
-           
-                  #We now have a property string <if there are properties> and cluster name <if specified>, and a GET property <if specified> we need to build a full URI. Yes this is a lazy way to handle this.
-                  
-                  if($GetProperty -and $ClusterString -and $PropertyString){
-                   
-                    $Uri = $BaseUri + $Endpoint +'?'+$GetProperty+'&'+$ClusterString+'&'+$PropertyString 
-                  }
-                  elseif($GetProperty -and $ClusterString -and !$PropertyString){
-                    
-                    $Uri = $BaseUri + $Endpoint + '?'+$GetProperty+'&'+$ClusterString
-                  }
-                  elseif($GetProperty -and $PropertyString -and !$ClusterString){
+            #If a cluster name was specified, builds a string for that
+            if($XtremioName -and ($Method -eq 'GET' -or $Method -eq 'DELETE'))
+            {
+                $ClusterString = 'cluster-name='+$XtremioName
+            }
+            else
+            {
+                $ClusterString = $null 
+            }
 
-                    $Uri = $BaseUri + $Endpoint + '?'+ $GetProperty + '&' + $PropertyString
+            if($PropertyString)
+            {
+                ## another special case for performance calls...
+                if($Endpoint -like "*performance*")
+                {
+                    $PropertyString = $PropertyString
+                }
+                else
+                {
+                    $PropertyString = 'full=1&'+$PropertyString
+                }
+            }
 
-                  }
-                  elseif($GetProperty -and !$PropertyString -and !$ClusterString){
+            ## We now have a property string <if there are properties> and cluster name <if specified>, 
+            ## and a GET property <if specified> we need to build a full URI. Yes this is a lazy way to handle this.
+            if($Uri)
+            {
+                $Uri = $BaseUri + $Uri
+            }
+            elseif($GetProperty -and $ClusterString -and $PropertyString)
+            {
+                $Uri = $BaseUri + $Endpoint +'?'+$GetProperty+'&'+$ClusterString+'&'+$PropertyString 
+            }
+            elseif($GetProperty -and $ClusterString -and !$PropertyString)
+            {
+                $Uri = $BaseUri + $Endpoint + '?'+$GetProperty+'&'+$ClusterString
+            }
+            elseif($GetProperty -and $PropertyString -and !$ClusterString)
+            {
+                $Uri = $BaseUri + $Endpoint + '?'+ $GetProperty + '&' + $PropertyString
+            }
+            elseif($GetProperty -and !$PropertyString -and !$ClusterString)
+            {
+                $Uri = $BaseUri + $Endpoint + '?' + $GetProperty
+            }
+            elseif(!$GetProperty -and $PropertyString -and $ClusterString)
+            {
+                $Uri = $BaseUri + $Endpoint + '?' + $ClusterString + '&' + $PropertyString
+            }
+            elseif(!$GetProperty -and !$PropertyString -and $ClusterString)
+            {
+                $Uri = $BaseUri + $Endpoint + '?' + $ClusterString
+            }
+            elseif(!$GetProperty -and $PropertyString -and !$ClusterString)
+            {
+                $Uri = $BaseUri + $Endpoint + '?' + $PropertyString 
+            }
+            else
+            {
+                $Uri = $BaseUri + $Endpoint 
+            }
+            ## USE THIS BELOW LINE TO DEBUG WHAT URL IS BEING GENERATED :)
+            Write-Debug -Message "$Uri"
 
-                    $Uri = $BaseUri + $Endpoint + '?' + $GetProperty
-
-                  }
-                  elseif(!$GetProperty -and $PropertyString -and $ClusterString){
-
-                    $Uri = $BaseUri + $Endpoint + '?' + $ClusterString + '&' + $PropertyString
-
-                  }
-                  elseif(!$GetProperty -and !$PropertyString -and $ClusterString){
-
-                    $Uri = $BaseUri + $Endpoint + '?' + $ClusterString
-
-                  }
-                  elseif(!$GetProperty -and $PropertyString -and !$ClusterString){
-
-                    $Uri = $BaseUri + $Endpoint + '?' + $PropertyString 
-
-                  }
-                  else{
-                    
-                    $Uri = $BaseUri + $Endpoint 
-
-                  }
-
-                  ##USE THIS BELOW LINE TO DEBUG WHAT URL IS BEING GENERATED :)
-                  #Write-Host $Uri 
-                  
-                 
-                  
-                  ##Do this for GET Requests
-                  if($Method -eq 'GET'){
-                      
-                      #special way of handling performance calls, special JSON serializer needs to be used as payload is large
-                      if($Endpoint -like "*performance*"){
-
-                        $jsonserial= New-Object -TypeName System.Web.Script.Serialization.JavaScriptSerializer 
-                        $jsonserial.MaxJsonLength = [int]::MaxValue
-                        $data = $jsonserial.DeserializeObject((Invoke-WebRequest -Method $Method -Uri $Uri -Headers $Header))
-                        
-                        $data
-
-                      }
-                      else{
+            ## Do this for GET Requests
+            if($Method -eq 'GET')
+            {
+                ## special way of handling performance calls, special JSON serializer needs to be used as payload is large
+                if($Endpoint -like "*performance*")
+                {
+                    $jsonserial= New-Object -TypeName System.Web.Script.Serialization.JavaScriptSerializer 
+                    $jsonserial.MaxJsonLength = [int]::MaxValue
+                    $data = $jsonserial.DeserializeObject((Invoke-WebRequest -Method $Method -Uri $Uri -Headers $Header))
+                    $data
+                }
+                else
+                {
                     (Invoke-RestMethod -Method $Method -Uri $Uri -Headers $Header).$ObjectSelection
-                    }
-                  }
+                }
+            }
 
-                  ##Do this for POST Requests
-                  if($Method -eq 'POST'){
+            ## Do this for POST Requests
+            if($Method -eq 'POST')
+            {
+                $data = (Invoke-RestMethod -Method $Method -Uri $Uri -Body $Body -Headers $Header)
 
-                    $data = (Invoke-RestMethod -Method $Method -Uri $Uri -Body $Body -Headers $Header)
-
-                    $href = $data.links.href
-                    Write-Host $data
-                    Write-Host $href
-                    #Sometimes there are more than one object being created, so we'll return them all in an array
-                    if($href.count -gt 1){
-                      
-                      $arr = @()
-
-                      For($i = 0; $i -lt $href.count; $i++){
+                $href = $data.links.href
+                Write-Host $data
+                Write-Host $href
+                ## Sometimes there are more than one object being created, so we'll return them all in an array
+                if($href.count -gt 1)
+                {
+                    $arr = @()
+                    for($i = 0; $i -lt $href.count; $i++)
+                    {
                         Write-Host $href[$i]
                         $tmp = (Invoke-RestMethod -Method GET -Uri $href[$i] -Headers $Header).$ObjectSelection
                         Write-Host $tmp 
                         $arr += $tmp 
-                      }
-
-                      $arr
                     }
-
-                    else{                  
-
-                    
+                    $arr
+                }
+                else
+                {
                     (Invoke-RestMethod -Method GET -Uri $href -Headers $Header).$ObjectSelection
-                   }
-
-                  }
-
-                  ##Do this for PUT Requests
-                  if($Method -eq 'PUT'){
-
-                    $req = (Invoke-WebRequest -Method $Method -Uri $Uri -Headers $Header -Body $Body)
-
-                    if($req.StatusCode -eq 200){
-
-                      Write-Host -ForegroundColor Green "Request Successful"
-                      $true
-
-                    }
-
-                    
-
-                  }
-
-                  ##Do this for DELETE Requests
-                  if($Method -eq 'DELETE'){
-
-                    $req = (Invoke-WebRequest -Method $Method -Uri $Uri -Headers $Header)
-
-                    if($req.StatusCode -eq 200){
-
-                      Write-Host -ForegroundColor Green "Delete Request Successful"
-                      $true
-
-
-                  }
                 }
             }
-            catch{
 
-              Get-XtremErrorMsg -errordata $result
+            ## Do this for PUT Requests
+            if($Method -eq 'PUT')
+            {
+                $req = (Invoke-WebRequest -Method $Method -Uri $Uri -Headers $Header -Body $Body)
 
-
+                if($req.StatusCode -eq 200)
+                {
+                    Write-Host -ForegroundColor Green "Request Successful"
+                    $true
+                }
             }
 
-  $result 
-
+            ## Do this for DELETE Requests
+            if($Method -eq 'DELETE')
+            {
+                $req = (Invoke-WebRequest -Method $Method -Uri $Uri -Headers $Header)
+                if($req.StatusCode -eq 200)
+                {
+                    Write-Host -ForegroundColor Green "Delete Request Successful"
+                    $true
+                }
+            }
+        }
+        catch
+        {
+            Get-XtremErrorMsg -errordata $result
+        }
+        $result
+    }
 }
-
-
-
 
 ######### ETC #########
 
@@ -2177,13 +2227,11 @@ Function Get-XtremErrorMsg([AllowNull()][object]$errordata){
     }
    catch{
     Write-Host ""
-    Write-Host -ForegroundColor Red "Error: XtremIO name or IP not resolveable. It may have been mistyped. This may also indicate that you have not properly imported the XtremIO certificate."
-    
-   } 
-  
+    Write-Host -ForegroundColor Red "Error: XtremIO name or IP not resolveable (). It may have been mistyped. This may also indicate that you have not properly imported the XtremIO certificate."
+   }
 }
 
-#Defines global username, password, and hostname/ip for PS session 
+#Defines global username, password, and hostname/ip for PS session
 function New-XtremSession([string]$XtremioName,[string]$XmsName, [string]$Username, [string]$Password, [string]$CredLocation) {
 
    <#
@@ -2230,7 +2278,7 @@ function New-XtremSession([string]$XtremioName,[string]$XmsName, [string]$Userna
         $global:XtremUsername = Get-Content $userlocation
         $global:XtremPassword = Get-Content $pwdlocation | ConvertTo-SecureString 
 
-        Write-Host -ForegroundColor Green "Session variables set"
+        Write-Debug -Message "Session variables set"
         return $true
       }
     
@@ -2242,11 +2290,9 @@ function New-XtremSession([string]$XtremioName,[string]$XmsName, [string]$Userna
         $securepassword = ConvertTo-SecureString $password -AsPlainText -Force
         $global:XtremPassword =$securepassword
         
-        Write-Host -ForegroundColor Green "Session variables set"
+        Write-Debug -Message "Session variables set"
         return $true
-
       }
-    
     }
    
     #else it's an interactive session
